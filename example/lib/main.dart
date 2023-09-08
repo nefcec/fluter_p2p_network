@@ -1,11 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'dart:async';
-import 'dart:io';
-
-import 'package:flutter_p2p_network/flutter_p2p_network.dart';
+import 'package:flutter_p2p_network/p2p.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() {
@@ -19,9 +18,7 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
-  P2pNetWork p2p = P2pNetWork();
-
+class _MyAppState extends State<MyApp> with PeerListener {
   @override
   void initState() {
     super.initState();
@@ -32,21 +29,12 @@ class _MyAppState extends State<MyApp> {
       Directory dir = await getApplicationDocumentsDirectory();
       String keyPath = dir.path;
 
-      final peerState = await p2p.onStart(
-          bootId: "12D3KooWAKzXfMEHicYoLWe2G3MuLJpcLAyjJmyiu4ZEZmd63sTB",
-          bootAddress: "/dns4/yangdong.co/tcp/25556",
-          keyPath: keyPath,
-          onReceived: ({
-            required String remotePeerId,
-            required int length,
-            required int messageId,
-            required Uint8List data,
-          }) {
-            print(remotePeerId);
-            print(length);
-            print(messageId);
-            print(utf8.decode(data));
-          });
+      P2pNetWork.addPeerListener(this);
+      final peerState = await P2pNetWork.onStart(
+        bootId: "12D3KooWAKzXfMEHicYoLWe2G3MuLJpcLAyjJmyiu4ZEZmd63sTB",
+        bootAddress: "/dns4/yangdong.co/tcp/25556",
+        keyPath: keyPath,
+      );
       print("==========================================>");
       print(peerState.id);
       print(peerState.address);
@@ -65,9 +53,8 @@ class _MyAppState extends State<MyApp> {
         "12D3KooWG88KDHPJwGwZzvyrjkAoTnJC46mtUS9xEaVf1MbsTiy8"
       ];
       List<int> data = utf8.encode("你好啊，你看到这条消息了吗？");
-      await p2p.onRequest(
+      await P2pNetWork.sendMessage(
         peerId: peerIds[1],
-        messageId: 111,
         data: Uint8List.fromList(data),
       );
     } catch (e) {
@@ -102,5 +89,15 @@ class _MyAppState extends State<MyApp> {
         ),
       ),
     );
+  }
+
+  @override
+  void onMessage(
+      {required String remotePeerId,
+      required int length,
+      required Uint8List data}) {
+    print(remotePeerId);
+    print(length);
+    print(utf8.decode(data));
   }
 }

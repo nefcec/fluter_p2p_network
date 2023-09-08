@@ -39,5 +39,5 @@ android {
 
 dependencies {
     implementation(name: 'p2p', ext: 'aar')
-    implementation files('libs/p2p.jar')
+    implementation files('libs/p2p-sources.jar')
 }
