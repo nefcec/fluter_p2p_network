@@ -17,8 +17,11 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
+import p2p.MessageInfo;
+import p2p.NodeInfo;
+import p2p.OnMessageListener;
+import p2p.OnStartListener;
 import p2p.P2pPeer;
-import p2p.PeerState;
 
 /**
  * FlutterP2pPlugin
@@ -26,18 +29,28 @@ import p2p.PeerState;
 public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
     public static final String pluginName = "co.yangdong.p2pnetwork";
     final String ON_MESSAGE_EVENT = pluginName + ".onMessage";
+    final String ON_FIND_CLIENTS_EVENT = pluginName + ".onFindClients";
+    final String ON_PEER_STATE_CHANGE_EVENT = pluginName + ".onPeerStateChange";
     final String ON_START_METHOD = pluginName + ".onStart";
     final String ON_STOP_METHOD = pluginName + ".onStop";
     final String SND_MESSAGE_METHOD = pluginName + ".sendMessage";
+    final String ON_START_RECEIVE_MESSAGE_METHOD = pluginName + ".onStartReceiveMessage";
+    final String GET_PEER_METHOD = pluginName + ".getPeerState";
 
     private MethodChannel methodChannel;
     private EventChannel onMessageEventChannel;
-    private EventChannel.EventSink eventSink;
+    private EventChannel.EventSink onMessageEventSink;
+    private EventChannel onFindClientsEventChannel;
+    private EventChannel.EventSink onFindClientsEventSink;
+
+    private EventChannel onPeerStateChangeEventChannel;
+    private EventChannel.EventSink onPeerStateChangeEventSink;
 
     private Context context;
     private Activity activity;
 
     private P2pPeer p2p;
+
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -63,6 +76,11 @@ public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler
             case SND_MESSAGE_METHOD:
                 sendMessage(call, result);
                 break;
+            case ON_START_RECEIVE_MESSAGE_METHOD:
+//                onStartReceiveMessage();
+
+            case GET_PEER_METHOD:
+
             default:
                 result.notImplemented();
         }
@@ -72,6 +90,8 @@ public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         methodChannel.setMethodCallHandler(null);
         onMessageEventChannel.setStreamHandler(null);
+        onFindClientsEventChannel.setStreamHandler(null);
+        onPeerStateChangeEventChannel.setStreamHandler(null);
     }
 
     private void registerReceivedEventChannel(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -79,12 +99,38 @@ public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler
         onMessageEventChannel.setStreamHandler(new EventChannel.StreamHandler() {
             @Override
             public void onListen(Object arguments, EventChannel.EventSink events) {
-                eventSink = events;
+                onMessageEventSink = events;
             }
 
             @Override
             public void onCancel(Object arguments) {
+                onMessageEventSink = null;
+            }
+        });
 
+        onFindClientsEventChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), ON_FIND_CLIENTS_EVENT);
+        onFindClientsEventChannel.setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object arguments, EventChannel.EventSink events) {
+                onFindClientsEventSink = events;
+            }
+
+            @Override
+            public void onCancel(Object arguments) {
+                onFindClientsEventSink = null;
+            }
+        });
+
+        onPeerStateChangeEventChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), ON_PEER_STATE_CHANGE_EVENT);
+        onPeerStateChangeEventChannel.setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object arguments, EventChannel.EventSink events) {
+                onPeerStateChangeEventSink = events;
+            }
+
+            @Override
+            public void onCancel(Object arguments) {
+                onPeerStateChangeEventSink = null;
             }
         });
 
@@ -119,35 +165,49 @@ public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler
             WifiManager.MulticastLock multicastLock = wifi.createMulticastLock("multicastLock");
             multicastLock.setReferenceCounted(true);
             multicastLock.acquire();
+            setOnMessageListener();
             String bootId = call.argument("bootId");
             String bootAddress = call.argument("bootAddress");
             String keyPath = call.argument("keyPath");
-            PeerState peerState = p2p.startPeer(
-                    bootId,
-                    bootAddress,
-                    keyPath);
-            Map<String, Object> map = new HashMap<>();
-            map.put("id", peerState.getId());
-            map.put("address", peerState.getAddresses());
-            map.put("uptime", peerState.getUptime());
-            map.put("reachAbility", peerState.getReachability());
-            setPeerListener();
-            result.success(map);
+            p2p.onStart(bootId, bootAddress, keyPath, new OnStartListener() {
+                @Override
+                public void onFailed(Exception e) {
+                    result.error(ErrorCode.ON_START_ERROR, e.getMessage(), e);
+                }
+
+                @Override
+                public void onSuccess(NodeInfo nodeInfo) {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("nodeId", nodeInfo.getId());
+                    map.put("address", nodeInfo.getAddresses());
+                    map.put("uptime", nodeInfo.getUptime());
+                    map.put("reachAbility", nodeInfo.getReachability());
+                    result.success(map);
+                }
+            });
         } catch (Exception ex) {
             result.error(ErrorCode.ON_START_ERROR, ex.getMessage(), ex);
         }
     }
 
-    private void setPeerListener() {
-        p2p.setPeerListener((remotePeerId, length, data) -> {
-            if (activity != null) {
-                activity.runOnUiThread(() -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("remotePeerId", remotePeerId);
-                    map.put("length", length);
-                    map.put("data", data);
-                    eventSink.success(map);
-                });
+    private void setOnMessageListener() {
+        p2p.setOnMessageListener(new OnMessageListener() {
+            @Override
+            public void onFailed(Exception e) {
+                onMessageEventSink.error(ErrorCode.ON_MESSAGE_ERROR, e.getMessage(), e);
+            }
+
+            @Override
+            public void onMessage(MessageInfo messageInfo) {
+                if (activity != null) {
+                    activity.runOnUiThread(() -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("remoteId", messageInfo.getRemoteId());
+                        map.put("length", messageInfo.getLength());
+                        map.put("data", messageInfo.getData());
+                        onMessageEventSink.success(map);
+                    });
+                }
             }
         });
     }
@@ -159,13 +219,13 @@ public class FlutterP2pNetworkPlugin implements FlutterPlugin, MethodCallHandler
             p2p.sendMessage(peerId, data);
             result.success(null);
         } catch (Exception ex) {
-            result.error(ErrorCode.ON_REQUEST_ERROR, ex.getMessage(), ex);
+            result.error(ErrorCode.ON_SEND_MESSAGE_ERROR, ex.getMessage(), ex);
         }
     }
 
     private void onStop(@NonNull Result result) {
         try {
-            p2p.stopPeer();
+            p2p.onStop();
             result.success(null);
         } catch (Exception ex) {
             result.error(ErrorCode.ON_STOP_ERROR, ex.getMessage(), ex);

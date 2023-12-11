@@ -18,7 +18,7 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> with PeerListener {
+class _MyAppState extends State<MyApp> with OnMessageListener {
   @override
   void initState() {
     super.initState();
@@ -29,18 +29,12 @@ class _MyAppState extends State<MyApp> with PeerListener {
       Directory dir = await getApplicationDocumentsDirectory();
       String keyPath = dir.path;
 
-      P2pNetWork.addPeerListener(this);
-      final peerState = await P2pNetWork.onStart(
+      P2pNetWork.addOnMessageListener(this);
+      await P2pNetWork.onStart(
         bootId: "12D3KooWAKzXfMEHicYoLWe2G3MuLJpcLAyjJmyiu4ZEZmd63sTB",
         bootAddress: "/dns4/yangdong.co/tcp/25556",
         keyPath: keyPath,
       );
-      print("==========================================>");
-      print(peerState.id);
-      print(peerState.address);
-      print(peerState.uptime);
-      print(peerState.reachAbility);
-      print("==========================================>");
     } catch (e) {
       // print(e);
     }
@@ -92,12 +86,9 @@ class _MyAppState extends State<MyApp> with PeerListener {
   }
 
   @override
-  void onMessage(
-      {required String remotePeerId,
-      required int length,
-      required Uint8List data}) {
-    print(remotePeerId);
-    print(length);
-    print(utf8.decode(data));
+  void onMessage(message) {
+    print(message.remoteId);
+    print(message.length);
+    print(utf8.decode(message.data));
   }
 }

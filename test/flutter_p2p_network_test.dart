@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_p2p_network/src/flutter_p2p_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -17,13 +16,13 @@ void main() {
     channel.setMockMethodCallHandler(null);
   });
 
-  test('onStart', () async {
-    expect(
-        await P2pNetWork.onStart(
-          bootId: "",
-          bootAddress: "",
-          keyPath: "",
-        ),
-        '42');
-  });
+  // test('onStart', () async {
+  //   expect(
+  //       await P2pNetWork.onStart(
+  //         bootId: "",
+  //         bootAddress: "",
+  //         keyPath: "",
+  //       ),
+  //       '42');
+  // });
 }

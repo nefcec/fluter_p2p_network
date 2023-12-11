@@ -15,6 +15,10 @@ buildscript {
 rootProject.allprojects {
     repositories {
         flatDir {
+            dirs project(':flutter_p2p_network').file('libs')
+        }
+
+        flatDir {
             dirs 'libs'
         }
         google()
@@ -38,6 +42,6 @@ android {
 }
 
 dependencies {
-    implementation(name: 'p2p', ext: 'aar')
-    implementation files('libs/p2p-sources.jar')
+    implementation(name: 'libp2p', ext: 'aar')
+    implementation files('libs/libp2p-sources.jar')
 }

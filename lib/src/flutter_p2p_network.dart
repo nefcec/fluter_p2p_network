@@ -3,29 +3,67 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_p2p_network/src/config.dart';
 
-class PeerState {
-  final String id;
+class NodeInfo {
+  final String nodeId;
   final String address;
   final int uptime;
   final ReachAbility reachAbility;
 
-  PeerState(this.id, this.address, this.uptime, this.reachAbility);
-}
-
-abstract class PeerListener {
-  void onMessage({
-    required String remotePeerId,
-    required int length,
-    required Uint8List data,
+  NodeInfo({
+    required this.nodeId,
+    required this.address,
+    required this.uptime,
+    required this.reachAbility,
   });
 }
 
+abstract class OnMessageListener {
+  void onMessage(MessageInfo message) {}
+}
+
+// abstract class OnP2pStateChangeListener {
+//   void onPeerStateChange(NodeInfo state) {}
+// }
+
+// class P2pStateListener extends OnP2pStateChangeListener {
+//   void Function(NodeInfo state)? onStateChanged;
+//
+//   P2pStateListener(this.onStateChanged);
+//
+//   @override
+//   void onPeerStateChange(NodeInfo state) {
+//     onStateChanged?.call(state);
+//   }
+// }
+
+// abstract class PeerListener {
+//   void onMessage(MessageData message) {}
+//
+//   void onFindClients(List<String> list) {}
+//
+//   void onPeerStateChange(PeerState state) {}
+// }
+
 enum ReachAbility {
-  reachAbilityUnknown,
+  reachAbilityUnknown(0),
+  reachAbilityPublic(1),
+  reachAbilityPrivate(2);
 
-  reachAbilityPublic,
+  final int value;
+  const ReachAbility(this.value);
 
-  reachAbilityPrivate,
+  static ReachAbility fromInt(int value) {
+    return ReachAbility.values.firstWhere((e) => e.value == value);
+  }
+}
+
+class Test {
+  final RootIsolateToken rootIsolateToken;
+  final MethodChannel methodChannel;
+  Test(
+    this.rootIsolateToken,
+    this.methodChannel,
+  );
 }
 
 class P2pNetWork {
@@ -41,24 +79,58 @@ class P2pNetWork {
       const EventChannel(onMessageEvent);
   StreamSubscription? _onMessageEventSubscription;
 
-  final List<PeerListener> _listeners = [];
+  final EventChannel _onFindClientsEventChannel =
+      const EventChannel(onFindClientsEvent);
+  StreamSubscription? _onFindClientsSubscription;
 
-  Future<PeerState> _onStart({
+  final EventChannel _onPeerStateChangeEventChannel =
+      const EventChannel(onPeerStateChangeEvent);
+  StreamSubscription? _onPeerStateChangeSubscription;
+
+  // final List<PeerListener> _listeners = [];
+
+  final Map<int, OnMessageListener> _onMessageListeners = {};
+  // final Map<int, OnP2pStateChangeListener> _onPeerStateChangeListeners = {};
+
+  void _setOnMessageListener() {
+    _onMessageEventSubscription =
+        _onMessageEventChannel.receiveBroadcastStream().listen((event) {
+      String remoteId = event["remoteId"];
+      int length = event["length"];
+      Uint8List data = event["data"];
+      for (final key in _onMessageListeners.keys) {
+        _onMessageListeners[key]?.onMessage(
+          MessageInfo(
+            remoteId: remoteId,
+            length: length,
+            data: data,
+          ),
+        );
+      }
+    });
+  }
+
+  Future<NodeInfo> _onStart({
     required String bootId,
     required String bootAddress,
     required String keyPath,
   }) async {
-    final result = await _methodChannel.invokeMethod(onStartMethod, {
+    // _onMessage();
+    // _onFindClients();
+    // _onPeerStateChange();
+    _setOnMessageListener();
+    final node = await _methodChannel.invokeMethod(onStartMethod, {
       "bootId": bootId,
       "bootAddress": bootAddress,
       "keyPath": keyPath,
     });
-    String id = result["id"];
-    String address = result["address"];
-    int uptime = result["uptime"];
-    int reachAbility = result["reachAbility"];
-    _onMessage();
-    return PeerState(id, address, uptime, ReachAbility.values[reachAbility]);
+
+    return NodeInfo(
+      nodeId: node["nodeId"],
+      address: node["address"],
+      uptime: node["uptime"],
+      reachAbility: ReachAbility.fromInt(node["reachAbility"]),
+    );
   }
 
   Future<void> _sendMessage({
@@ -71,38 +143,71 @@ class P2pNetWork {
     });
   }
 
-  void _addPeerListener(PeerListener listener) {
-    _listeners.add(listener);
+  Future<void> _onStartReceiveMessage() {
+    return _methodChannel.invokeMethod(onStartReceiveMessageMethod);
   }
+
+  // void _addPeerListener(PeerListener listener) {
+  //   _listeners.add(listener);
+  // }
+
+  void _addOnMessageListener(OnMessageListener listener) {
+    _onMessageListeners[listener.hashCode] = listener;
+  }
+
+  void _removeOnMessageListener(OnMessageListener listener) {
+    _onMessageListeners.remove(listener.hashCode);
+  }
+
+  // void _addOnP2pStateChangeListener(OnP2pStateChangeListener listener) {
+  //   _onPeerStateChangeListeners[listener.hashCode] = listener;
+  // }
+  //
+  // void _removeOnP2pStateChangeListener(OnP2pStateChangeListener listener) {
+  //   _onPeerStateChangeListeners.remove(listener.hashCode);
+  // }
 
   Future<void> _onStop() async {
     await _methodChannel.invokeMethod(onStopMethod);
     _onMessageEventSubscription?.cancel();
     _onMessageEventSubscription = null;
+    _onFindClientsSubscription?.cancel();
+    _onFindClientsSubscription = null;
+    _onPeerStateChangeSubscription?.cancel();
+    _onPeerStateChangeSubscription = null;
   }
 
-  Future<void> _onMessage() async {
-    _onMessageEventSubscription =
-        _onMessageEventChannel.receiveBroadcastStream().listen((event) {
-      String remotePeerId = event["remotePeerId"];
-      int length = event["length"];
-      Uint8List data = event["data"];
-      for (final listener in _listeners) {
-        listener.onMessage(
-          remotePeerId: remotePeerId,
-          length: length,
-          data: data,
-        );
-      }
-    });
-  }
+  // Future<void> _onFindClients() async {
+  //   _onFindClientsSubscription =
+  //       _onFindClientsEventChannel.receiveBroadcastStream().listen((event) {
+  //     for (final listener in _listeners) {
+  //       final clients = FindClientsData.fromBuffer(event);
+  //       listener.onFindClients(clients.list);
+  //     }
+  //   });
+  // }
+
+  // Future<void> _onPeerStateChange() async {
+  //   _onPeerStateChangeSubscription =
+  //       _onPeerStateChangeEventChannel.receiveBroadcastStream().listen((event) {
+  //     // bool connected = event["connected"];
+  //     String id = event["id"];
+  //     String address = event["address"];
+  //     int uptime = event["uptime"];
+  //     int reachAbility = event["reachAbility"];
+  //     for (final key in _onPeerStateChangeListeners.keys) {
+  //       _onPeerStateChangeListeners[key]?.onPeerStateChange(
+  //           Node(id, address, uptime, ReachAbility.values[reachAbility]));
+  //     }
+  //   });
+  // }
 
   /// 启动P2P
   ///
   /// [bootId] bootId
   /// [bootAddress] bootAddress
   /// [keyPath] 私钥存放路径
-  static Future<PeerState> onStart({
+  static Future<NodeInfo> onStart({
     required String bootId,
     required String bootAddress,
     required String keyPath,
@@ -121,9 +226,38 @@ class P2pNetWork {
       _instance._sendMessage(peerId: peerId, data: data);
 
   /// 添加监听
-  static void addPeerListener(PeerListener listener) =>
-      _instance._addPeerListener(listener);
+  // static void addPeerListener(PeerListener listener) =>
+  //     _instance._addPeerListener(listener);
+
+  static void addOnMessageListener(OnMessageListener listener) =>
+      _instance._addOnMessageListener(listener);
+
+  static void removeOnP2pMessageListener(OnMessageListener listener) =>
+      _instance._removeOnMessageListener(listener);
+
+  // static void addOnP2pStateChangeListener(OnP2pStateChangeListener listener) =>
+  //     _instance._addOnP2pStateChangeListener(listener);
+  //
+  // static void removeOnP2pStateChangeListener(
+  //         OnP2pStateChangeListener listener) =>
+  //     _instance._removeOnP2pStateChangeListener(listener);
 
   /// 停止P2P
   static Future<void> onStop() => _instance._onStop();
+
+  /// 开始接收消息
+  static Future<void> onStartReceiveMessage() =>
+      _instance._onStartReceiveMessage();
+}
+
+class MessageInfo {
+  final String remoteId;
+  final int length;
+  final Uint8List data;
+
+  const MessageInfo({
+    required this.remoteId,
+    required this.length,
+    required this.data,
+  });
 }

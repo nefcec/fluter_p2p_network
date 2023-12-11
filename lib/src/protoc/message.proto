@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message FindClientsData {
+  repeated string list = 1;
+}
